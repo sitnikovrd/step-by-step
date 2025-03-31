@@ -4,7 +4,6 @@ package spentcalories
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -23,53 +22,31 @@ const (
 
 // parseTraining парсит строку с данными тренировки
 func parseTraining(data string) (int, string, time.Duration, error) {
-	// Регулярные выражения для поиска количества шагов, вида активности и времени
-	stepPattern := regexp.MustCompile(`^\d+`)
-	typePattern := regexp.MustCompile(`,\s*([^,]+),\s*`)
-	timePattern := regexp.MustCompile(`\d+h\d+m$`)
+	// Разделить строку на слайс строк
+	parts := strings.Split(data, ",")
 
-	// Найти количество шагов
-	matchSteps := stepPattern.FindStringSubmatch(data)
-	if matchSteps == nil {
-		return 0, "", 0, fmt.Errorf("невозможно распознать количество шагов в строке: %q", data)
+	// Проверить, чтобы длина слайса была равна 3
+	if len(parts) != 3 {
+		return 0, "", 0, fmt.Errorf("неправильный формат данных: ожидается 3 поля, а найдено %d", len(parts))
 	}
-	steps, err := strconv.Atoi(matchSteps[1])
+
+	// Преобразовать первый элемент слайса (количество шагов) в тип int
+	steps, err := strconv.Atoi(strings.TrimSpace(parts[0]))
 	if err != nil {
 		return 0, "", 0, fmt.Errorf("невозможно преобразовать количество шагов в число: %w", err)
 	}
 
-	// Найти вид активности
-	matchType := typePattern.FindStringSubmatch(data)
-	if matchType == nil {
-		return 0, "", 0, fmt.Errorf("невозможно распознать вид активности в строке: %q", data)
-	}
+	// Вид активности (второй элемент слайса)
+	activity := strings.TrimSpace(parts[1])
 
-	// Найти время
-	matchTime := timePattern.FindStringSubmatch(data)
-	if matchTime == nil {
-		return 0, "", 0, fmt.Errorf("невозможно распознать время в строке: %q", data)
-	}
-
-	// Парсинг времени в формате "XhYm"
-	parts := strings.Split(matchTime[1], "h")
-	hours, err := strconv.Atoi(parts[0])
+	// Преобразовать третий элемент слайса в time.Duration
+	duration, err := time.ParseDuration(strings.TrimSpace(parts[2]))
 	if err != nil {
-		return 0, "", 0, fmt.Errorf("невозможно преобразовать часы в число: %w", err)
+		return 0, "", 0, fmt.Errorf("невозможно преобразовать продолжительность в time.Duration: %w", err)
 	}
 
-	minutes := 0
-	if len(parts) > 1 {
-		minPart := strings.TrimSuffix(parts[1], "m")
-		minutes, err = strconv.Atoi(minPart)
-		if err != nil {
-			return 0, "", 0, fmt.Errorf("невозможно преобразовать минуты в число: %w", err)
-		}
-	}
-
-	// Преобразовать время в Duration
-	duration := time.Duration(hours)*time.Hour + time.Duration(minutes)*time.Minute
-
-	return steps, matchType[1], duration, nil
+	// Если всё прошло без ошибок, вернуть количество шагов, вид активности, продолжительность и nil
+	return steps, activity, duration, nil
 }
 
 // distance возвращает дистанцию в километрах
@@ -105,25 +82,25 @@ func WalkingSpentCalories(steps int, weight, height float64, duration time.Durat
 
 // TrainingInfo формирует строку с информацией о тренировке
 func TrainingInfo(data string, weight, height float64) string {
-	steps, activityType, duration, err := parseTraining(data)
+	steps, activity, duration, err := parseTraining(data)
 	if err != nil {
 		return fmt.Sprintf("Ошибка при парсинге данных: %v", err)
 	}
 
 	// Проверка, чтобы количество шагов было больше 0
 	if steps <= 0 {
-		return ""
+		return "Количество шагов должно быть положительным."
 	}
 
 	// Определение типа тренировки
-	var activity string
-	switch activityType {
-	case "Walking":
-		activity = "Ходьба"
-	case "Running":
-		activity = "Бег"
+	var calories float64
+	switch activity {
+	case "Ходьба":
+		calories = WalkingSpentCalories(steps, weight, height, duration)
+	case "Бег":
+		calories = RunningSpentCalories(steps, weight, duration)
 	default:
-		return "Неизвестный тип тренировки"
+		return "Неизвестный тип тренировки."
 	}
 
 	// Расчет дистанции
@@ -132,18 +109,7 @@ func TrainingInfo(data string, weight, height float64) string {
 	// Расчет средней скорости
 	meanSpd := meanSpeed(steps, duration)
 
-	// Расчет калорий
-	var calories float64
-	switch activityType {
-	case "Walking":
-		calories = WalkingSpentCalories(steps, weight, height, duration)
-	case "Running":
-		calories = RunningSpentCalories(steps, weight, duration)
-	default:
-		return "Неизвестный тип тренировки"
-	}
-
 	// Формирование строки с информацией
-	return fmt.Sprintf("Тип тренировки: %s\nДлительность: %.2f ч.\nДистанция: %.2f км.\nСкорость: %.2f км/ч\nСожгли калорий: %.2f ккал.",
+	return fmt.Sprintf("Тип тренировки: %s\nДлительность: %.2f ч.\nДистанция: %.2f км.\nСкорость: %.2f км/ч\nСожгли калорий: %.2f",
 		activity, duration.Hours(), dist, meanSpd, calories)
 }
